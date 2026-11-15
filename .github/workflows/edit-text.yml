@@ -1,0 +1,63 @@
+name: Edit text - manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      text:
+        description: "Non-confidential English text only (public repository). Output is a draft."
+        required: true
+        type: string
+  push:
+    paths:
+      - '.github/workflows/edit-text.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  edit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run repository tests
+        run: node --test test/*.test.js
+      - name: Edit text conservatively
+        env:
+          INPUT_TEXT: ${{ inputs.text }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          node --input-type=module <<'JS'
+          import { mkdirSync, writeFileSync } from 'node:fs';
+          import assert from 'node:assert/strict';
+          import { humanize } from './src/engine/index.js';
+          const demo = 'Furthermore, we leverage our expertise to deliver comprehensive services. The quoted amount is USD 22.00 for 100 units. Delivery must not begin without written approval.';
+          const input = process.env.EVENT_NAME === 'workflow_dispatch' ? process.env.INPUT_TEXT : demo;
+          if (!input?.trim()) throw new Error('Text is required.');
+          if (input.length > 50000) throw new Error('Limit: 50,000 characters.');
+          const output = humanize(input, {
+            mode: 'subtle', seed: 42, synonyms: false, rhythm: false,
+            contractions: false, stripMarkdown: false, dropFiller: false,
+          }).text;
+          const numbers = text => text.match(/\d+(?:[.,:]\d+)*/g) || [];
+          assert.deepEqual(numbers(output), numbers(input), 'Numeric content changed; output blocked.');
+          if (process.env.EVENT_NAME !== 'workflow_dispatch') {
+            assert.notEqual(output, input);
+            assert.ok(output.includes('Delivery must not begin without written approval.'));
+            assert.ok(!output.includes('To be fair'));
+          }
+          mkdirSync('output', {recursive: true});
+          writeFileSync('output/original.txt', input);
+          writeFileSync('output/edited-draft.txt', output);
+          writeFileSync('output/README.txt', 'DRAFT: review meaning, names, obligations and tone before use. Numeric preservation was checked; semantic equivalence is not guaranteed. No AI detector or watermark removal is certified.\n');
+          console.log('Text editing completed; download edited-draft artifact.');
+          JS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edited-draft
+          path: output/
+          retention-days: 1
+          if-no-files-found: error
