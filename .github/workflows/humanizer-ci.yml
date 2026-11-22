@@ -1,0 +1,27 @@
+name: Humanizer validation
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'test/**'
+      - 'package.json'
+      - '.github/workflows/humanizer-ci.yml'
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run offline unit tests
+        run: npm test
+      - name: Check CLI output
+        run: |
+          printf 'The implementation of this solution is robust.\n' | node src/cli.js --mode balanced > /tmp/humanized.txt
+          test -s /tmp/humanized.txt
